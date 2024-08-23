@@ -8,5 +8,5 @@ frecuentista para los resultados en los diferentes departamentos de Colombia, ad
 de la cobertura neta secundaria para ciertos municipios.
 
 ## Caso de estudio 3 - Elecciones y Diabetes
-En este trabajo se hizo un análisis de los datos de una encuesta que hacía referencia a las elecciones de la alcaldía en Bogotá en el año 2023. Además, también
+En este trabajo se hizo un análisis de los datos de una encuesta de las elecciones de la alcaldía en Bogotá en el año 2023. Además, también
 se realizó un modelo predictivo para la progresión de la diabetes.
