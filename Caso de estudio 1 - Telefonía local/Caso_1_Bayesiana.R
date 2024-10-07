@@ -1,233 +1,144 @@
-### Directorio de trabajo
-setwd("C:/Users/EQUIPO/OneDrive/Documentos/Documentos Ander/UNAL/Estadística Bayesiana")
+## Parcial 1 Bayesiana ##
+setwd("C:/Users/valer/Downloads")
 getwd()
 
-### Librerías a utilizar
-if (!require(invgamma)){install.packages("invgamma")
-  library(invgamma)
-}
-if (!require(doParallel)){install.packages("doParallel")
-  library(doParallel)
-}
-if (!require(foreach)){install.packages("foreach")
-  library(foreach)
-}
-if (!require(dplyr)){install.packages("dplyr")
-  library(dplyr)
-}
+library(invgamma)
+library(xtable)
+library(ggplot2)
+library(ggExtra)
+library(foreach)
+library(doParallel)
 
-### Datos
-data <- read.csv(file = "Verizon.csv")
+# Lectura de la base de datos 
+Y<-read.csv("Verizon.csv")
+y1<-Y[Y$Group == "ILEC",1]
+y2<-Y[Y$Group == "CLEC",1]
 
-ILEC <- data %>% 
-  filter(Group == "ILEC") %>% as.data.frame()
+# Tamaños de muestra
+n1<-length(y1) #1664 
+n2<-length(y2) #23
 
-CLEC <- data %>% 
-  filter(Group == "CLEC") %>% as.data.frame()
+# Estadisticos suficientes
+s1<-sum(y1) #13996.92
+s2<-sum(y2) #379.71
 
-y1 <- ILEC$Time
-y2 <- CLEC$Time
+# Análisis Bayesiano ################################# 
 
-### Hiperparámetros, tamaños de muestra y estadísticos suficientes
-n1 <- length(y1);n1
-n2 <- length(y2);n2
+# ------ Ajuste de los modelos Gamma- Inversa-Exponencial -----#
+## Previa Gamma inversa (a,b)
+a<-3
+b<-17
+## Parametros de la distribucion posterior (Actualizacion de parametros)
+ap1<- a + n1
+bp1<- b + s1
+ap2<- a + n2
+bp2<- b + s2
 
-a1 <- a2 <- 3
-b1 <- b2 <- 17
+theta <- seq(0, 25, length = 5000)  
+df <- data.frame(theta = theta,
+                 ILEC = dinvgamma(theta, shape = a, rate = b),
+                 CLEC = dinvgamma(theta, shape = ap1, rate = bp1),
+                 PREVIA = dinvgamma(theta, shape = ap2, rate = bp2))
 
-s1 <- sum(y1);s1
-s2 <- sum(y2);s2
+# Crear el gráfico en ggplot2
+ggplot(df, aes(x = theta)) +
+  geom_line(aes(y = ILEC, color = "ILEC"), size = 1) +
+  geom_line(aes(y = CLEC, color = "CLEC"), size = 1) +
+  geom_line(aes(y = PREVIA, color = "PREVIA"), size = 1) +
+  labs(x = expression(lambda),
+       y = expression(paste("p(", lambda, " | ", y, ")", sep = "")),
+       title = "Distribución Posterior") +
+  theme_minimal() +
+  scale_color_manual(values = c( 1,"purple", "red")) +
+  theme(legend.position = "topright", line_types=c("solid", "dashed","solid")) +
+  guides(color = guide_legend(title = NULL)) +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))
 
-ybar1 <- 8.41
-ybar2 <- 16.51
+## Distribucion posterior Monte Carlo
 
-## Análisis bayesiano ##
+B<-10000
+set.seed(123)
+lambda1<-rinvgamma(n = B, shape = ap1, rate = bp1)
+lambda2<-rinvgamma(n = B, shape = ap2, rate = bp2)
 
-### Parámetros de la distribución posterior
-a1p <- a1 + n1;a1p
-a2p <- a2 + n2;a2p
-b1p <- b1 + s1;b1p
-b2p <- b2 + s2;b2p
+etha<-lambda1-lambda2 #Distribucion posterior eta por Monte Carlo
+tab <- as.matrix(c(mean(etha), quantile(x = etha, probs = c(.025,.975)), sd(etha)/abs(mean(etha))))
+rownames(tab) <- c("Estimación","Q2.5%","Q97.5%","Coef. Variacion")
+xtable(tab, digits=3)
 
-### Visualización distribución previa y posterior
-par(mar = c(3,3,1.4,1.4), mgp = c(1.75,0.75,0))
-theta <- seq(0,25, length = 10000)
-plot(NA, NA, xlim = c(0,25),ylim = c(0,2), xlab = expression(lambda),
-     ylab = expression(paste("p(",lambda," | ",y,")",sep = "")),
-     main = "Distribución Posterior")
-lines(theta, dinvgamma(theta, shape = a1p, rate = b1p), col = 2, lwd = 2)
-lines(theta, dinvgamma(theta, shape = a2p, rate = b2p), col = 4, lwd = 2)
-lines(theta, dinvgamma(theta, shape = a1, rate=b1),lwd = 2)
-grid(nx=10)
-legend("right", legend = c("ILEC", "CLEC", "Previa"), 
-       col = c(2, 4, 1), lty = c(1,1,1), lwd = 2, bty = "n")
+## Grafico Distribucion posterior de eta
 
+data <- data.frame(etha)
 
-# Ajuste del modelo -------------------------------------------------------
+ggplot(data, aes(x = etha, y = ..density..)) +
+  geom_histogram(aes(y = ..density..), colour = "gray94", fill = "gray95") +
+  geom_density(lwd = 1.3, color = "turquoise3") +
+  labs(x = expression(eta), y = expression(paste("P( ", eta ,"| y)")),
+       title = expression(paste("Distribución posterior de ", eta))) +
+  geom_vline(
+    aes(xintercept = quantile(x = etha, probs = 0.025)),
+    linetype = "dashed",
+    size = 1,
+    color ="violetred"
+  ) +
+  geom_vline(
+    aes(xintercept = quantile(x = etha, probs = 0.975)),
+    linetype = "dashed",
+    size = 1,
+    color = "violetred"
+  )+
+  geom_vline(
+    aes(xintercept = mean(etha)),
+    linetype = "solid",
+    size = 1,
+    color = "orangered")+
+  theme_light()+
+  theme(plot.title = element_text(hjust = 0.5))
 
-### Montecarlo para aproximar eta
-set.seed(100)
-{lambda1mc <- rinvgamma(n = 10000, shape = a1p, rate = b1p)
-lambda2mc <- rinvgamma(n = 10000, shape = a2p, rate = b2p)}
-
-etamc <- lambda1mc-lambda2mc
-
-round(mean(etamc),3)
-cvetamc <- round(sd(etamc)/abs(mean(etamc)),3);cvetamc
-ICetamc <- round(quantile(etamc,probs=c(0.025,0.975)),3);ICetamc
-
-### Visualización distribución posterior de eta
-par(mar = c(3,3,1.4,1.4), mgp = c(1.75,0.75,0))
-hist(x = etamc, freq = F, col = "gray90", border = "gray90", xlim = c(-20,2), ylim = c(0,0.15),
-     xlab = expression(eta), ylab = expression(paste("p(",eta," | ",y,")",sep = "")), 
-     main = bquote(~"Distribución posterior de  "~eta~"="~lambda[1]-lambda[2]))
-lines(density(etamc), col = 4, lwd = 2)
-abline(v = quantile(x = etamc, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
-abline(v = mean(etamc), lty = 2, lwd = 2, col = 2)
-grid(nx=10)
-legend("right", legend = c("Posterior", "IC 95%", "Media"), 
-       col = c(4, 3, 2), lty = c(1,2,2), lwd = 2, bty = "n")
+#------------------------- Punto 2 ------------------------ #
 
 
-# Análisis de sensitividad ------------------------------------------------
+## Analisis de sensitividad
 
-### Hiperparámetros de prueba
-a11 <- a12 <- 3
-b11 <- b12 <- 17
+a<-c(3,2,3,2)
+b1<-c(17,8.5,16.8,8.4)
+b2<-c(17,8.5,33,16.5)
 
-a21 <- a22 <- 2
-b21 <- b22 <- 8.5
+## Distribuciones de eta posteriores
+set.seed(123)
+etap1pmc<-rinvgamma(10000, shape = 3+n1, rate = 17+s1)-rinvgamma(10000, shape = 3+n2, rate = 17+s2)
+etap2pmc<-rinvgamma(10000, shape = 2+n1, rate = 8.5+s1)-rinvgamma(10000, shape = 2+n2, rate = 8.5+s2)
+etap3pmc<-rinvgamma(10000, shape = 3+n1, rate = 16.8+s1)-rinvgamma(10000, shape = 3+n2, rate = 33+s2)
+etap4pmc<-rinvgamma(10000, shape = 2+n1, rate = 8.4+s1)-rinvgamma(10000, shape = 2+n2, rate = 16.5+s2)
 
-a31 <- a32 <- 3
-b31 <- 16.8
-b32 <- 33
+## Estadísticos de interés
+mean_apriori1<-b1/(a-1)
+mean_apriori2<-b2/(a-1)
+cv_apriori<-(1/sqrt(a-2))*100
+mean_eta <- c(mean(etap1pmc),mean(etap2pmc),mean(etap3pmc),mean(etap4pmc))
+cv_eta <- 100*c(sqrt(var(etap1pmc))/abs(mean(etap1pmc)),sqrt(var(etap2pmc))/abs(mean(etap2pmc)),sqrt(var(etap3pmc))/abs(mean(etap3pmc)),sqrt(var(etap4pmc))/abs(mean(etap4pmc)))
+IC_eta <- rbind(quantile(etap1pmc, probs = c(0.025,0.975)),quantile(etap2pmc, probs = c(0.025,0.975)),quantile(etap3pmc, probs = c(0.025,0.975)),quantile(etap4pmc, probs = c(0.025,0.975)))
+out <- cbind(mean_apriori1, cv_apriori, mean_apriori2, cv_apriori, mean_eta,cv_eta,IC_eta)
+colnames(out)<-c("Media previa 1","CV previa 1","Media previa 2","CV previa 2","Media Posterior", "CV Posterior", "Q2.5%", "Q97.5%")
+xtable(out, digits = 3)
 
-a41 <- a42 <- 2
-b41 <- 8.4
-b42 <- 16.5
-
-# Montecarlo para eta previa
-set.seed(100)
-{lambda1p1mc <- rinvgamma(n = 10000, shape = a11, rate = b11)
-  lambda2p1mc <- rinvgamma(n = 10000, shape = a12, rate = b12)
-  
-  lambda1p2mc <- rinvgamma(n = 10000, shape = a21, rate = b21)
-  lambda2p2mc <- rinvgamma(n = 10000, shape = a22, rate = b22)
-  
-  lambda1p3mc <- rinvgamma(n = 10000, shape = a31, rate = b31)
-  lambda2p3mc <- rinvgamma(n = 10000, shape = a32, rate = b32)
-  
-  lambda1p4mc <- rinvgamma(n = 10000, shape = a41, rate = b41)
-  lambda2p4mc <- rinvgamma(n = 10000, shape = a42, rate = b42)
-}
-
-# Muestras de eta para cada previa
-etap1mc <- lambda1p1mc-lambda2p1mc
-etap2mc <- lambda1p2mc-lambda2p2mc
-etap3mc <- lambda1p3mc-lambda2p3mc
-etap4mc <- lambda1p4mc-lambda2p4mc
-
-# Medias de las muestras de eta para cada previa
-round(mean(etap1mc),3)
-round(mean(etap2mc),3)
-round(mean(etap3mc),3)
-round(mean(etap4mc),3)
-
-# Coeficiente de variación de las muestras de eta para cada previa
-cvetap1mc <- round(sd(etap1mc)/abs(mean(etap1mc)),3);cvetap1mc
-cvetap2mc <- round(sd(etap2mc)/abs(mean(etap2mc)),3);cvetap2mc
-cvetap3mc <- round(sd(etap3mc)/abs(mean(etap3mc)),3);cvetap3mc
-cvetap4mc <- round(sd(etap4mc)/abs(mean(etap4mc)),3);cvetap4mc
-
-# Intervalos de confianza de las muestras de eta para cada previa
-ICetap1mc <- round(quantile(etap1mc,probs=c(0.025,0.975)),3);ICetap1mc
-ICetap2mc <- round(quantile(etap2mc,probs=c(0.025,0.975)),3);ICetap2mc
-ICetap3mc <- round(quantile(etap3mc,probs=c(0.025,0.975)),3);ICetap3mc
-ICetap4mc <- round(quantile(etap4mc,probs=c(0.025,0.975)),3);ICetap4mc
-
-### Distribución posterior para cada previa
-
-### Hiperparámetros para la distribución posterior
-
-#Previa con a_k=3 y b_k=17
-a11p <- a11 + n1;a11p
-a12p <- a12 + n2;a12p
-b11p <- b11 + s1;b11p
-b12p <- b12 + s2;b12p
-
-#Previa con a_k=2 y b_k=8.5
-a21p <- a21 + n1;a21p
-a22p <- a22 + n2;a22p
-b21p <- b21 + s1;b21p
-b22p <- b22 + s2;b22p
-
-#Previa con a_k=3, b_1=16.8 y b_2=33
-a31p <- a31 + n1;a31p
-a32p <- a32 + n2;a32p
-b31p <- b31 + s1;b31p
-b32p <- b32 + s2;b32p
-
-#Previa con a_k=2, b_1=8.4 y b_2=16.5
-a41p <- a41 + n1;a41p
-a42p <- a42 + n2;a42p
-b41p <- b41 + s1;b41p
-b42p <- b42 + s2;b42p
-
-# Montecarlo para aproximar la posterior de eta para cada previa
-set.seed(100)
-{lambda1p1pmc <- rinvgamma(n = 10000, shape = a11p, rate = b11p)
-  lambda2p1pmc <- rinvgamma(n = 10000, shape = a12p, rate = b12p)
-  
-  lambda1p2pmc <- rinvgamma(n = 10000, shape = a21p, rate = b21p)
-  lambda2p2pmc <- rinvgamma(n = 10000, shape = a22p, rate = b22p)
-  
-  lambda1p3pmc <- rinvgamma(n = 10000, shape = a31p, rate = b31p)
-  lambda2p3pmc <- rinvgamma(n = 10000, shape = a32p, rate = b32p)
-  
-  lambda1p4pmc <- rinvgamma(n = 10000, shape = a41p, rate = b41p)
-  lambda2p4pmc <- rinvgamma(n = 10000, shape = a42p, rate = b42p)
-}
-
-# Muestras de eta posterior para cada previa
-etap1pmc <- lambda1p1pmc-lambda2p1pmc
-etap2pmc <- lambda1p2pmc-lambda2p2pmc
-etap3pmc <- lambda1p3pmc-lambda2p3pmc
-etap4pmc <- lambda1p4pmc-lambda2p4pmc
-
-# Medias de las muestras de eta posterior para cada previa
-round(mean(etap1pmc),3)
-round(mean(etap2pmc),3)
-round(mean(etap3pmc),3)
-round(mean(etap4pmc),3)
-
-# Coeficiente de variación de las muestras de eta para cada previa
-cvetap1pmc <- round(sd(etap1pmc)/abs(mean(etap1pmc)),3);cvetap1pmc
-cvetap2pmc <- round(sd(etap2pmc)/abs(mean(etap2pmc)),3);cvetap2pmc
-cvetap3pmc <- round(sd(etap3pmc)/abs(mean(etap3pmc)),3);cvetap3pmc
-cvetap4pmc <- round(sd(etap4pmc)/abs(mean(etap4pmc)),3);cvetap4pmc
-
-# Intervalos de confianza de las muestras de eta para cada previa
-ICetap1pmc <- round(quantile(etap1pmc,probs=c(0.025,0.975)),3);ICetap1pmc
-ICetap2pmc <- round(quantile(etap2pmc,probs=c(0.025,0.975)),3);ICetap2pmc
-ICetap3pmc <- round(quantile(etap3pmc,probs=c(0.025,0.975)),3);ICetap3pmc
-ICetap4pmc <- round(quantile(etap4pmc,probs=c(0.025,0.975)),3);ICetap4pmc
-
-### Panel con las visualizaciones de las posteriores con cada previa
+## Visualización del análisis de sensitividad
 par(mfrow=c(2,2),mar = c(5,3,1.4,1.4), mgp = c(1.75,0.75,0))
 {hist(x = etap1pmc, freq = F, col = "gray90", border = "gray90", xlim = c(-20,2), ylim = c(0,0.15),
-     xlab = expression(eta), ylab = expression(paste("p(",eta," | ",y,")",sep = "")), 
-     main = bquote(~"Previa con "~a[k]~" = 3 y"~b[k]~" = 17"))
-lines(density(etap1pmc), col = 4, lwd = 2)
-abline(v = quantile(x = etap1pmc, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
-abline(v = mean(etap2pmc), lty = 2, lwd = 2, col = 2)
-grid(nx=10)}
+      xlab = expression(eta), ylab = expression(paste("p(",eta," | ",y,")",sep = "")), 
+      main = bquote(~"Previa con "~a[k]~" = 3 y"~b[k]~" = 17"))
+  lines(density(etap1pmc), col = 4, lwd = 2)
+  abline(v = quantile(x = etap1pmc, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
+  abline(v = mean(etap2pmc), lty = 1, lwd = 2, col = 2)
+  grid(nx=10)}
 
 {hist(x = etap2pmc, freq = F, col = "gray90", border = "gray90", xlim = c(-20,2), ylim = c(0,0.15),
       xlab = expression(eta), ylab = expression(paste("p(",eta," | ",y,")",sep = "")), 
       main = bquote(~"Previa con "~a[k]~" = 2 y"~b[k]~" = 8.5"))
   lines(density(etap2pmc), col = 4, lwd = 2)
   abline(v = quantile(x = etap2pmc, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
-  abline(v = mean(etap2pmc), lty = 2, lwd = 2, col = 2)
+  abline(v = mean(etap2pmc), lty = 1, lwd = 2, col = 2)
   grid(nx=10)}
 
 {hist(x = etap3pmc, freq = F, col = "gray90", border = "gray90", xlim = c(-20,2), ylim = c(0,0.15),
@@ -235,120 +146,160 @@ grid(nx=10)}
       main = bquote(~"Previa con "~a[k]~" = 3,"~b[1]~" = 16.8 y "~b[2]~" = 33"))
   lines(density(etap3pmc), col = 4, lwd = 2)
   abline(v = quantile(x = etap3pmc, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
-  abline(v = mean(etap3pmc), lty = 2, lwd = 2, col = 2)
+  abline(v = mean(etap3pmc), lty = 1, lwd = 2, col = 2)
   grid(nx=10)}
 
 legend_coord <- locator(1)
 legend(x=legend_coord[1],y=legend_coord[2], legend = c("Posterior", "IC 95%", "Media"), 
-       col = c(4, 3, 2), lty = c(1,2,2), lwd = 2, bty = "n",xpd = TRUE, horiz = TRUE)
+       col = c(4, 3, 2), lty = c(1,2,1), lwd = 2, bty = "n",xpd = TRUE, horiz = TRUE)
 
 {hist(x = etap4pmc, freq = F, col = "gray90", border = "gray90", xlim = c(-20,2), ylim = c(0,0.15),
       xlab = expression(eta), ylab = expression(paste("p(",eta," | ",y,")",sep = "")), 
       main = bquote(~"Previa con "~a[k]~" = 2,"~b[1]~" = 8.4 y "~b[2]~" = 16.5"))
   lines(density(etap4pmc), col = 4, lwd = 2)
   abline(v = quantile(x = etap4pmc, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
-  abline(v = mean(etap4pmc), lty = 2, lwd = 2, col = 2)
+  abline(v = mean(etap4pmc), lty = 1, lwd = 2, col = 2)
   grid(nx=10)}
 
 legend_coord <- locator(1)
 legend(x=legend_coord[1],y=legend_coord[2], legend = c("Posterior", "IC 95%", "Media"), 
-       col = c(4, 3, 2), lty = c(1,2,2), lwd = 2, bty = "n",xpd = TRUE, horiz = TRUE)
+       col = c(4, 3, 2), lty = c(1,2,1), lwd = 2, bty = "n",xpd = TRUE, horiz = TRUE)
 
+# --------------------- Punto 3 ---------------------- #
+## Bondad de ajuste
+ybarra1<-s1/n1
+ybarra2<-s2/n2
+sd11<-sd(y1)
+sd22<-sd(y2)
 
-# Bondad de ajuste --------------------------------------------------------
-
-
-### Parámetros de prueba de las muestras
-ybar1
-ybar2
-
-sd01 <- sd(y1);sd01
-sd02 <- sd(y2);sd02
-
-B = 10000 # Número de iteraciones
-
-stats1 <- matrix(data = NA, nrow = B, ncol = 2)
-stats2 <- matrix(data = NA, nrow = B, ncol = 2)
-
-####### USO FOREACH
-
-# Configura el número de núcleos a utilizar, en mi caso tengo 12, usaré 10
-cl <- makeCluster(10)
-
-# Activo el uso de los núcleos
-registerDoParallel(cl)
-
-# Foreach para la bondad de ajuste
-stats1 <- foreach(i=1:B,.combine = "rbind")%dopar%{
-  set.seed(100)
-  muestra1 <- rexp(n = n1, rate = 1/lambda1mc[i])
-  a <- mean(muestra1)
-  b <- sd(muestra1)
-  c <- cbind(a,b)
-  return(c)
+media1<-NULL
+media2<-NULL
+sd1<-NULL
+sd2<-NULL
+set.seed(123)
+for (i in 1:10000) {
+  y1_i<-rexp(n1, rate=1/lambda1[i])
+  media1[i]<-mean(y1_i)
+  sd1[i]<-sd(y1_i)
+  y2_i<-rexp(n2, rate=1/lambda2[i])
+  media2[i]<-mean(y2_i)
+  sd2[i]<-sd(y2_i)
 }
-
-stats2 <- foreach(i=1:B,.combine = "rbind")%dopar%{
-  set.seed(100)
-  muestra2 <- rexp(n = n2, rate = 1/lambda2mc[i])
-  a <- mean(muestra2)
-  b <- sd(muestra2)
-  c <- cbind(a,b)
-  return(c)
-}
-# Detenemos el uso de varios núcleos
-stopCluster(cl)
-
-# Matrices de los estadísticos calculados en las 10000 muestras para cada grupo
-stats1
-stats2
 
 par(mfrow=c(2,2),mar = c(5,3,1.4,1.4), mgp = c(1.75,0.75,0))
-{hist(x = stats1[,1], freq = F, col = "gray90", border = "gray90", xlim = c(7.5,9), ylim = c(0,2),
-     xlab = expression(t), ylab =  expression(paste("p(",t," | ",y,")",sep = "")) , 
-     main = bquote(~"Bondad de ajuste para"~bar(y)~" grupo 1"))
-lines(density(stats1[,1]), col = 4, lwd = 2)
-abline(v = quantile(x = stats1[,1], probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
-abline(v = ybar1, lty = 2, lwd = 2, col = 2)
-grid(nx=10)}
+{hist(x = media1, freq = F, col = "gray90", border = "gray90", xlim = c(7,12), ylim = c(0, ceiling(max(density(media1)$y))), xlab = "t", ylab =  expression(paste("P( t | y)")), main = "Bondad de ajuste con media")
+  grid(nx=10)
+  lines(density(media1), col = 4, lwd = 2)
+  abline(v = ybarra1, col = 14, lwd = 2, lty = 1)
+  abline(v = quantile(x = media1, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)}
 
-{hist(x = stats1[,2], freq = F, col = "gray90", border = "gray90", xlim = c(7.5,15), ylim = c(0,2),
-      xlab = expression(t), ylab =  expression(paste("p(",t," | ",y,")",sep = "")) , 
-      main = bquote(~"Bondad de ajuste para"~s~" grupo 1"))
-  lines(density(stats1[,2]), col = 4, lwd = 2)
-  abline(v = quantile(x = stats1[,2], probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
-  abline(v = sd01, lty = 2, lwd = 2, col = 2)
-  grid(nx=10)}
+{hist(sd1, freq = F, xlim = c(7,15), ylim = c(0,1.5), col = "gray90", border = "gray90",  xlab = "t", ylab =  expression(paste("P( t | y)")), main = "Bondad de ajuste con sd" )
+  grid(nx=10)
+  lines(density(sd1), col = 4, lwd = 2)
+  abline(v = sd11, col = 14, lwd = 2, lty = 1)
+  abline(v = quantile(x = sd1, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)}
 
-{hist(x = stats2[,1], freq = F, col = "gray90", border = "gray90", xlim = c(0,20), ylim = c(0,0.2),
-      xlab = expression(t), ylab =  expression(paste("p(",t," | ",y,")",sep = "")) , 
-      main = bquote(~"Bondad de ajuste para"~bar(y)~" grupo 2"))
-  lines(density(stats2[,1]), col = 4, lwd = 2)
-  abline(v = quantile(x = stats2[,1], probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
-  abline(v = ybar2, lty = 2, lwd = 2, col = 2)
-  grid(nx=10)}
+{hist(x = media2, freq = F, col = "gray90", border = "gray90", xlim = c(0,48), ylim = c(0, 0.15), xlab = "t", ylab =  expression(paste("P( t | y)")), main = "Bondad de ajuste con media")
+  grid(nx=10)
+  lines(density(media2), col = 4, lwd = 2)
+  abline(v = ybarra2, col = 14, lwd = 2, lty = 1)
+  abline(v = quantile(x = media2, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)}
 
+legend_coord <- locator(1)
+legend(x=legend_coord[1],y=legend_coord[2], legend = c("Posterior", "IC 95%", "Media"), 
+       col = c(4, 3, 14), lty = c(1,2,2), lwd = 2, bty = "n",xpd = TRUE, horiz = TRUE)
 
+{hist(sd2, freq = F, xlim = c(1,40), ylim = c(0,0.12), col = "gray90", border = "gray90",  xlab = "t", ylab =  expression(paste("P( t | y)")),main = "Bondad de ajuste con sd" )
+  grid(nx=10)
+  lines(density(sd2), col = 4, lwd = 2)
+  abline(v = sd22, col = 14, lwd = 2, lty = 1)
+  abline(v = quantile(x = sd2, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
+}
 
-# Análisis frecuentista ################################# 
+legend_coord <- locator(1)
+legend(x=legend_coord[1],y=legend_coord[2], legend = c("Posterior", "IC 95%", "t obs"), 
+       col = c(4, 3, 14), lty = c(1,2,1), lwd = 2, bty = "n",xpd = TRUE, horiz = TRUE)
+
+## ppp
+
+media_1<-c(mean(media1>ybarra1), ybarra1, quantile(media1, probs = c(0.025, 0.975)))
+media_2<-c(mean(media2>ybarra2), ybarra2, quantile(media2, probs = c(0.025, 0.975)))
+sd_1<-c(mean(sd1>sd11), sd11, quantile(sd1, probs = c(0.025, 0.975)))
+sd_2<-c(mean(sd2>sd22), sd22, quantile(sd2, probs = c(0.025, 0.975)))
+
+ppp<-rbind(media_1,media_2, sd_1, sd_2)
+
+colnames(ppp)<-c("PPP", "Estimación", "Lim. inf.", "Lim. Sup")
+xtable(ppp, digits = 3)
+
+## Dispersograma
+disp1<-data.frame(media1,sd1)
+disp2<-data.frame(media2,sd2)
+
+## Dispersograma ILEC
+disper1 <- ggplot(disp1, aes(x = media1, y = sd1)) +
+  geom_point() +
+  labs(
+    x = "Media",
+    y = "Desviación estándar",
+    title = "Distribuciones predictivas de los estadisticos de prueba ILEC"
+  )+theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_point(x = ybarra1, y = sd11, color = "magenta2", size = 4)+
+  geom_vline(xintercept = ybarra1, color = "salmon", linetype = "dashed") +
+  geom_hline(yintercept = sd11, color = "salmon", linetype = "dashed")
+  
+disper_1 <- ggMarginal(disper1, type = "histogram", fill="salmon")
+print(disper_1)
+
+## Dispersograma CLEC
+disper2 <- ggplot(disp2, aes(x = media2, y = sd2)) +
+  geom_point() +
+  labs(
+    x = "Media",
+    y = "Desviación estándar",
+    title = "Distribuciones predictivas de los estadisticos de prueba CLEC"
+  )+theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))+
+  geom_point(x = ybarra2, y = sd22, color = "palevioletred1", size = 4)+
+  geom_vline(xintercept = ybarra2, color = "violetred", linetype = "dashed") +
+  geom_hline(yintercept = sd22, color = "violetred", linetype = "dashed")
+
+disper_2 <- ggMarginal(disper2, type = "histogram", fill="violetred")
+print(disper_2)
+
+#------------------------- Análisis frecuentista -------------------------# 
 
 
 # Normalidad asintótica ---------------------------------------------------
 
 ### Parámetros y estadísticos 
-mean1MLE <- mean(y1)
-mean2MLE <- mean(y2)
-var1MLE <- mean1MLE^2/n1
-var2MLE <- mean2MLE^2/n2
+ybarra1
+ybarra2
+var1MLE <- ybarra1^2/n1
+var2MLE <- ybarra2^2/n2
 
-meaneta <- mean1MLE-mean2MLE
-sdeta <- sqrt(var1MLE+var2MLE)
+mean_etaMLE <- ybarra1-ybarra2
+sd_etaMLE <- sqrt(var1MLE+var2MLE)
 
 
-round(meaneta,3)
-cveta <- round(sdeta/abs(meaneta),3);cveta
-ICeta <- round(c(meaneta-qnorm(0.975)*sdeta,meaneta+qnorm(0.975)*sdeta),3);ICeta
+round(mean_etaMLE,3)
+cveta <- round(sd_etaMLE/abs(mean_etaMLE),3);cveta
+ICeta <- round(c(mean_etaMLE-qnorm(0.975)*sd_etaMLE,mean_etaMLE+qnorm(0.975)*sd_etaMLE),3);ICeta
+nasin<-cbind(round(mean_etaMLE,3),cveta,t(ICeta))
 
+### Aproximación de la distribución de etaMLE
+theta <- seq(-25,10, length = 100000)  
+par(mfrow=c(1,1),mar = c(3,3,1.4,1.4), mgp = c(1.75,0.75,0))
+hist(x = qnorm(theta, mean = mean_etaMLE, sd = sd_etaMLE), freq = F, col = "gray90", border = "gray90", xlim = c(-20,5), ylim = c(0,0.15),
+     xlab = expression(hat(eta)), ylab =  expression(paste("p(",hat(eta)," | ",y,")",sep = "")), 
+     main = bquote(~"Distribución aproximada de "~hat(eta)~"="~hat(lambda[1])-hat(lambda[2])))
+grid(nx = 30, ny = 20, col = "gray95")
+lines(theta, dnorm(theta, mean = mean_etaMLE, sd = sd_etaMLE), col=4, lwd=2)
+abline(v = c(qnorm(0.025, mean = mean_etaMLE, sd = sd_etaMLE), qnorm(0.975, mean = mean_etaMLE, sd = sd_etaMLE)), lty = 2, lwd = 2, col = 3)
+abline(v = mean_etaMLE, lwd = 2, col = 2)
+legend("right", legend = c("Densidad", "IC 95%", "Media"), 
+       col = c(4, 3, 2), lty = c(1,2,1), lwd = 2, bty = "n")
 
 # Bootstrap frecuentista paramétrico --------------------------------------
 B = 10000
@@ -358,8 +309,8 @@ lambda2bp <- NULL
 ### Muestras a partir del modelo exponencial
 set.seed(100)
 for(i in 1:B){
-  bp1 <- rexp(n = n1, rate = 1/ybar1)
-  bp2 <- rexp(n = n2, rate = 1/ybar2)
+  bp1 <- rexp(n = n1, rate = 1/ybarra1)
+  bp2 <- rexp(n = n2, rate = 1/ybarra2)
   lambda1bp[i] = mean(bp1)
   lambda2bp[i] = mean(bp2)
 }
@@ -370,18 +321,19 @@ etabp<-lambda1bp-lambda2bp
 round(mean(etabp),3)
 cvetabp <- round(sd(etabp)/abs(mean(etabp)),3);cvetabp
 ICetabp <- round(quantile(etabp,probs=c(0.025,0.975)),3);ICetabp
+bp <-cbind(round(mean(etabp),3),cvetabp,t(ICetabp))
 
 ### Visualización de la distribución del Bootstrap paramétrico
 par(mfrow=c(1,1),mar = c(3,3,1.4,1.4), mgp = c(1.75,0.75,0))
 hist(x = etabp, freq = F, col = "gray90", border = "gray90", xlim = c(-20,2), ylim = c(0,0.15),
      xlab = expression(hat(eta)), ylab =  expression(paste("p(",hat(eta)," | ",y,")",sep = "")), 
-     main = bquote(~"Densidad de "~hat(eta)~"="~hat(lambda[1])-hat(lambda[2])~" utilizando Bootstrap paramétrico"))
+     main = bquote(~"Distribución de "~hat(eta)~"="~hat(lambda[1])-hat(lambda[2])~" utilizando Bootstrap paramétrico"))
 lines(density(etabp), col = 4, lwd = 2)
 abline(v = quantile(x = etabp, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
-abline(v = mean(etabp), lty = 2, lwd = 2, col = 2)
+abline(v = mean(etabp), lwd = 2, col = 2)
 grid(nx=10)
 legend("right", legend = c("Densidad", "IC 95%", "Media"), 
-       col = c(4, 3, 2), lty = c(1,2,2), lwd = 2, bty = "n")
+       col = c(4, 3, 2), lty = c(1,2,1), lwd = 2, bty = "n")
 
 
 
@@ -406,14 +358,158 @@ round(mean(etabnp),3)
 cvetabnp <- round(sd(etabnp)/abs(mean(etabnp)),3);cvetabnp
 ICetabnp <- round(quantile(etabnp,probs=c(0.025,0.975)),3);ICetabnp
 
+bnp <-cbind(round(mean(etabnp),3),cvetabp,t(ICetabnp))
+
 ### Visualización Bootstrap no paramétrico
 par(mar = c(3,3,1.4,1.4), mgp = c(1.75,0.75,0))
 hist(x = etabnp, freq = F, col = "gray90", border = "gray90", xlim = c(-20,2), ylim = c(0,0.15),
      xlab = expression(hat(eta)), ylab =  expression(paste("p(",hat(eta)," | ",y,")",sep = "")) , 
-     main = bquote(~"Densidad de "~hat(eta)~"="~hat(lambda[1])-hat(lambda[2])~" utilizando Bootstrap no paramétrico"))
+     main = bquote(~"Distribución de "~hat(eta)~"="~hat(lambda[1])-hat(lambda[2])~" utilizando Bootstrap no paramétrico"))
 lines(density(etabnp), col = 4, lwd = 2)
 abline(v = quantile(x = etabnp, probs = c(0.025, 0.975)), lty = 2, lwd = 2, col = 3)
-abline(v = mean(etabnp), lty = 2, lwd = 2, col = 2)
+abline(v = mean(etabnp), lwd = 2, col = 2)
 grid(nx=10)
 legend("right", legend = c("Densidad", "IC 95%", "Media"), 
-       col = c(4, 3, 2), lty = c(1,2,2), lwd = 2, bty = "n")
+       col = c(4, 3, 2), lty = c(1,2,1), lwd = 2, bty = "n")
+
+xtable(rbind(nasin,bp,bnp),digits = 3)
+
+
+# ----------------------------Simulación ----------------------------- # 
+ns <- c(10,20,50,100)
+K <- 100000
+Bay <- 10000
+B <- 1000
+
+ybarra1 <- mean(y1)
+ybarra2 <- mean(y2)
+etaobs <- ybarra1-ybarra2
+
+a<-3
+b<-17
+
+as <- a + ns
+
+propbay <- NULL
+propmle <- NULL
+propbp <- NULL
+propbnp <- NULL
+
+cont <- c(0,0,0,0)
+
+# Configura el número de núcleos a utilizar, en mi caso tengo 12, usaré 10
+
+NUCLEOS <- 10
+
+cl <- makeCluster(NUCLEOS)
+
+# Activo el uso de los núcleos
+registerDoParallel(cl)
+
+## Modelo bayesiano
+ñ <- proc.time() 
+set.seed(123)
+for (j in 1:length(ns)) {
+  contbay <- foreach (i = 1:K,.combine = "+")%dopar%{
+    set.seed(123+i)
+    muestra1 <- rexp(n = ns[j], rate = 1/ybarra1)
+    muestra2 <- rexp(n = ns[j], rate = 1/ybarra2)
+    
+    ## Modelo bayesiano
+    bs1<- b + sum(muestra1)
+    bs2<- b + sum(muestra2)
+    
+    etasb<-1/rgamma(n = Bay, shape = as[j], rate = bs1)-1/rgamma(n = Bay, shape = as[j], rate = bs2)
+    icbay<-quantile(x = etasb, probs = c(.025,.975))
+    
+    if(etaobs>=icbay[1] && etaobs<=icbay[2]){
+      1
+    }
+    else{0}
+  }
+  propbay[j] <- contbay*100/K
+}
+
+registerDoParallel(cl)
+
+## Normalidad Asintótica
+set.seed(123)
+for (j in 1:length(ns)) {
+  contmle <- foreach (i = 1:K,.combine = "+")%dopar%{
+    set.seed(123+i)
+    muestra1 <- rexp(n = ns[j], rate = 1/ybarra1)
+    muestra2 <- rexp(n = ns[j], rate = 1/ybarra2)
+    
+    mean1 <- mean(muestra1)
+    mean2 <- mean(muestra2)
+    etamle <- mean1-mean2
+    sdetamle <- sqrt(mean1^2/ns[j]+mean2^2/ns[j])
+    
+    icmle <- c(etamle-1.959964*sdetamle,etamle+1.959964*sdetamle)
+    
+    if(etaobs>=icmle[1] && etaobs<=icmle[2]){
+      1
+    }
+    else{0}
+  }
+  propmle[j] <- contmle*100/K
+} 
+
+registerDoParallel(cl)
+
+## Bootstrap paramétrico
+set.seed(123)
+for (j in 1:length(ns)) {
+  
+  etasimbp <- NULL
+  
+  contbp <- foreach (i = 1:K,.combine = "+")%dopar%{
+    set.seed(123+i)
+    muestra1 <- rexp(n = ns[j], rate = 1/ybarra1)
+    muestra2 <- rexp(n = ns[j], rate = 1/ybarra2)
+    set.seed(123+i)
+    for(l in 1:B){
+      etasimbp[l] = mean(rexp(n = ns[j], rate = 1/mean(muestra1)))-mean(rexp(n = ns[j], rate = 1/mean(muestra2)))
+    }
+    icbp<-quantile(x = etasimbp, probs = c(.025,.975))
+    
+    if(etaobs>=icbp[1] && etaobs<=icbp[2]){
+      1
+    }
+    else{0}
+  }
+  propbp[j] <- contbp*100/K
+}
+
+registerDoParallel(cl)
+
+## Bootstrap no paramétrico
+set.seed(123)
+for (j in 1:length(ns)) {
+  
+  etasimbnp <- NULL
+  
+  contbnp <- foreach (i = 1:K,.combine = "+")%dopar%{
+    set.seed(123+i)
+    muestra1 <- rexp(n = ns[j], rate = 1/ybarra1)
+    muestra2 <- rexp(n = ns[j], rate = 1/ybarra2)
+    
+    for(q in 1:B){
+      etasimbnp[q] <- mean(sample(x = muestra1, size = ns[j], replace = TRUE))-mean(sample(x = muestra2, size = ns[j], replace = TRUE))
+    }
+    icbnp<-quantile(x = etasimbnp, probs = c(.025,.975))
+    
+    if(etaobs>=icbnp[1] && etaobs<=icbnp[2]){
+      1
+    }
+    else{0}
+  }
+  propbnp[j] <- contbnp*100/K
+}
+props <- cbind(propbay,propmle,propbp,propbnp)
+
+proc.time()-ñ   
+# Detenemos el uso de varios núcleos
+stopCluster(cl)
+
+xtable(props,digits = 3)
